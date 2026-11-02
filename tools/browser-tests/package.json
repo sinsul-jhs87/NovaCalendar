@@ -1,0 +1,7 @@
+{
+  "name": "widget-calendar-browser-tests",
+  "private": true,
+  "type": "module",
+  "description": "화면 동작·글자 대비 검사. src 폴더를 http://127.0.0.1:8765 로 띄운 뒤 실행한다.",
+  "dependencies": { "puppeteer-core": "^23", "@sparticuz/chromium": "^131" }
+}
