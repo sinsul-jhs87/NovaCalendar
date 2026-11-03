@@ -416,7 +416,8 @@ body.chip-drag, body.chip-drag * { cursor: grabbing !important; }
 .dvcard .item.on { box-shadow: inset 0 0 0 2px var(--accent); }
 
 /* ───────── 위젯 맨 아래: 프로그램 아이콘과 이름 ───────── */
-.brandbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 3px 12px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); zoom: var(--fs, 1); user-select: none; }
+.brandbar { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 10px 6px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); zoom: var(--z-ui, 1); user-select: none; }
+.brandbar .brand { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .brandbar img { width: 14px; height: 14px; }
 
 /* 좁은 위젯: 음력이 칸 밖으로 넘치지 않게 칸 안에서 줄어들게 한다 */
@@ -572,3 +573,49 @@ html[data-done='hide'] :is(.chip, .tev, .pitem, .scard).done { display: none; }
 /* 새 버전이 있으면 메뉴 버튼에 작은 점 */
 #btn-menu.has-update { position: relative; }
 #btn-menu.has-update::after { content: ''; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--panel); }
+
+/* ───────── 아래 막대: 캘린더 보이기·숨기기, 밀린 일 ───────── */
+.calchips { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.calchips::-webkit-scrollbar { display: none; }
+.calchips[hidden] { display: none; }
+.calchip { flex: none; display: inline-flex; align-items: center; gap: 5px; max-width: 140px; padding: 2px 9px 2px 7px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--panel) 60%, transparent); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; transition: opacity 0.15s, background 0.15s; }
+.calchip span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.calchip .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1.5px var(--c); }
+.calchip:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
+.calchip.off { opacity: 0.5; }
+.calchip.off .dot { background: transparent; }
+.calchip.off span { text-decoration: line-through; }
+.odpill { flex: none; padding: 2px 9px; border: 1px solid color-mix(in srgb, var(--sun) 50%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--sun) 16%, transparent); color: var(--sun); font: inherit; font-weight: 700; cursor: pointer; }
+.odpill[hidden] { display: none; }
+@media (max-width: 560px) { .calchip span, .brandbar .brand span { display: none; } .calchip { padding: 3px 6px; } }
+
+/* 밀린 일 */
+.od-list .pgroup { margin: 10px 2px 4px; }
+.od-item { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; padding: 8px 10px; border-left: 3px solid var(--c); border-radius: 8px; background: var(--cell-hover); }
+.od-info { flex: 1; min-width: 0; }
+.od-info .ttl { overflow: hidden; font-size: 13px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.od-info .meta { margin-top: 2px; font-size: 11px; color: var(--muted); }
+.od-acts { flex: none; display: flex; align-items: center; gap: 4px; }
+.btn.sm { padding: 3px 9px; font-size: 12px; }
+.od-note { font-size: 11px; color: var(--muted); }
+.od-count { margin-left: 4px; font-size: 13px; color: var(--sun); }
+
+/* 보고용 내보내기 */
+.ex-body { display: grid; gap: 10px; align-content: start; }
+.ex-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.ex-seg button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+.ex-seg button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); font-weight: 700; }
+.ex-range { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ex-range input { padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; }
+.ex-range input:disabled { opacity: 0.6; }
+.ex-opt { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ex-summary { font-size: 12px; font-weight: 600; word-break: break-all; }
+.ex-preview { max-height: 220px; margin: 0; padding: 10px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--panel) 70%, transparent); font: 12px/1.5 var(--font-ui, inherit); white-space: pre-wrap; scrollbar-width: none; }
+.ex-foot { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* 빠른 입력 */
+#qa-input { width: 100%; margin: 4px 0 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; font-size: 15px; outline: none; }
+#qa-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.qa-preview { min-height: 20px; padding: 0 2px; font-size: 13px; color: var(--muted); }
+.qa-preview.err { color: var(--sun); }
+.qacard .dv { padding-bottom: 10px; }

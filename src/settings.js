@@ -1,6 +1,6 @@
 import { parseImport, buildEvents } from './importer.js';
 import {
-  api, applyTheme, applyLook, fontStack, isFontInstalled, updateSettings, sendSettingsPreview, onAccountsChanged, onSettingsChanged, fmtDateTime, el, panelFlags, THEMES, FONT_GROUPS, UPDATE_DEFAULT } from './common.js';
+  api, applyTheme, applyLook, fontStack, isFontInstalled, updateSettings, sendSettingsPreview, onAccountsChanged, onSettingsChanged, fmtDateTime, el, panelFlags, THEMES, FONT_GROUPS, UPDATE_DEFAULT, UPDATE_GITHUB } from './common.js';
 
 const { getCurrentWindow } = window.__TAURI__.window;
 
@@ -17,7 +17,7 @@ function setNote(node, text, isError = false) {
 // ───────────────────────── 일반(초안 → 저장/취소) ─────────────────────────
 // 화면의 값은 초안(draft)에만 반영되고, [저장]을 눌러야 파일에 기록된다.
 
-const KEYS = ['opacity', 'monthMode', 'weekStart', 'notifyEnabled', 'notifyStyle', 'syncMinutes', 'backupEnabled', 'showHolidays', 'showSpecial', 'showLunar', 'showPanel', 'showToday', 'showUpcoming', 'fontScale', 'fontFamily', 'surface', 'doneStyle', 'uiFont', 'uiSize', 'numFont', 'numSize', 'evFont', 'evSize', 'panelFont', 'panelSize', 'updateSource', 'updateAuto'];
+const KEYS = ['opacity', 'monthMode', 'weekStart', 'notifyEnabled', 'notifyStyle', 'syncMinutes', 'backupEnabled', 'showHolidays', 'showSpecial', 'showLunar', 'showPanel', 'showToday', 'showUpcoming', 'fontScale', 'fontFamily', 'surface', 'doneStyle', 'uiFont', 'uiSize', 'numFont', 'numSize', 'evFont', 'evSize', 'panelFont', 'panelSize', 'updateSource', 'updateAuto', 'briefEnabled', 'briefTime', 'quickHotkey'];
 const PREVIEW_KEYS = ['opacity', 'monthMode', 'weekStart', 'showHolidays', 'showSpecial', 'showLunar', 'showPanel', 'showToday', 'showUpcoming', 'fontScale', 'fontFamily', 'surface', 'doneStyle', 'uiFont', 'uiSize', 'numFont', 'numSize', 'evFont', 'evSize', 'panelFont', 'panelSize'];
 let saved = {};
 let draft = {};
@@ -61,6 +61,10 @@ function applyGeneral() {
   const pf = panelFlags(draft, THEMES.find((t) => t.id === draft.theme)?.layout?.panel || 'none');
   $('#show-today').checked = pf.today;
   $('#update-source').value = draft.updateSource || '';
+  $('#brief-enabled').checked = draft.briefEnabled !== false;
+  $('#brief-time').value = draft.briefTime || '08:30';
+  $('#quick-hotkey').checked = draft.quickHotkey !== false;
+  $('#od-since').textContent = draft.overdueSince ? `${draft.overdueSince}부터 셉니다` : '처음 켠 날부터 셉니다';
   $('#update-auto').checked = draft.updateAuto !== false;
   $('#show-upcoming').checked = pf.upcoming;
   $('#done-style').value = draft.doneStyle || 'strike-dim';
@@ -689,8 +693,9 @@ $('#btn-import-go').addEventListener('click', async () => {
 
 // ───────────────────────── 업데이트 ─────────────────────────
 window.__TAURI__?.app?.getVersion?.().then((v) => { $('#upd-current').textContent = v; }).catch(() => {});
-$('#upd-default').textContent = `기본 위치: ${UPDATE_DEFAULT} (다른 곳을 쓰려면 위에 입력, 확인을 멈추려면 '자동으로 확인'을 끄세요)`;
-const effSource = (v) => (v || '').trim() || UPDATE_DEFAULT;
+$('#upd-default').textContent = `기본 위치(비워 두면 차례로 확인): ① GitHub ${UPDATE_GITHUB.replace('https://', '').replace('/releases/latest/download', '')} 릴리즈 → ② 공유 폴더 ${UPDATE_DEFAULT}. 다른 곳을 쓰려면 위에 입력, 확인을 멈추려면 '자동으로 확인'을 끄세요.`;
+// 비워 두면 null을 넘겨 기본 위치들을 차례로 확인하게 한다
+const effSource = (v) => (v || '').trim() || null;
 $('#update-source').addEventListener('input', (e) => change('updateSource', e.target.value.trim()));
 $('#update-auto').addEventListener('change', (e) => change('updateAuto', e.target.checked));
 $('#btn-upd-check').addEventListener('click', async (e) => {
@@ -702,13 +707,14 @@ $('#btn-upd-check').addEventListener('click', async (e) => {
   try {
     const r = await api.checkUpdate(src);
     const m = r.latest || {};
+    const where = r.from ? (r.from.startsWith('http') ? ' · GitHub에서 확인' : ' · 공유 폴더에서 확인') : '';
     if (r.newer) {
       const savedSrc = effSource(saved.updateSource);
-      setNote($('#upd-msg'), `새 버전 ${m.version}이 있습니다 (지금 ${r.current}).${m.notes ? ' ' + m.notes : ''}${src !== savedSrc ? ' 설치하려면 먼저 [저장]을 누르세요.' : ''}`);
+      setNote($('#upd-msg'), `새 버전 ${m.version}이 있습니다 (지금 ${r.current})${where}.${m.notes ? ' ' + m.notes : ''}${src !== savedSrc ? ' 설치하려면 먼저 [저장]을 누르세요.' : ''}`);
       $('#btn-upd-install').hidden = src !== savedSrc;
       $('#btn-upd-install').textContent = `${m.version} 설치`;
     } else {
-      setNote($('#upd-msg'), `최신 버전입니다 (${r.current}).`);
+      setNote($('#upd-msg'), `최신 버전입니다 (${r.current})${where}.`);
     }
   } catch (err) {
     setNote($('#upd-msg'), String(err), true);
@@ -726,4 +732,18 @@ $('#btn-upd-install').addEventListener('click', async (e) => {
     setNote($('#upd-msg'), String(err), true);
     b.disabled = false;
   }
+});
+
+
+// ───────────────────────── 편의 기능 ─────────────────────────
+$('#brief-enabled').addEventListener('change', (e) => change('briefEnabled', e.target.checked));
+$('#brief-time').addEventListener('change', (e) => change('briefTime', e.target.value || '08:30'));
+$('#quick-hotkey').addEventListener('change', (e) => change('quickHotkey', e.target.checked));
+api.hotkeyStatus?.().then((ok) => { $('#hotkey-state').textContent = ok ? '지금 사용 중' : '지금은 꺼져 있거나 다른 프로그램이 쓰고 있습니다'; }).catch(() => {});
+$('#btn-od-reset').addEventListener('click', async () => {
+  const t = new Date();
+  const today = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  await updateSettings({ overdueSince: today });
+  saved.overdueSince = draft.overdueSince = today;
+  $('#od-since').textContent = `${today}부터 셉니다`;
 });

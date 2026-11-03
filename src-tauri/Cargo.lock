@@ -4716,7 +4716,7 @@ dependencies = [
 
 [[package]]
 name = "widget-calendar"
-version = "1.12.2"
+version = "1.13.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

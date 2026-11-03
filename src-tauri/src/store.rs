@@ -120,10 +120,20 @@ pub struct Settings {
     pub ev_size: f64,
     pub panel_font: String,
     pub panel_size: f64,
-    /// 업데이트 위치(공유 폴더 또는 https 주소). 비어 있으면 기본 위치(update::DEFAULT_SOURCE)를 쓴다.
+    /// 업데이트 위치(공유 폴더 또는 https 주소). 비어 있으면 기본 위치(GitHub Releases → 사내 공유 폴더)를 차례로 확인한다.
     pub update_source: String,
     /// 켤 때·6시간마다 자동으로 확인
     pub update_auto: bool,
+    /// 숨긴 캘린더(달력·패널·날짜 팝업에서 뺀다. 'local' = 내 캘린더)
+    pub hidden_cals: Vec<String>,
+    /// 밀린 일을 세기 시작한 날(처음 쓴 날로 정해져, 예전 일정이 한꺼번에 밀린 일로 뜨지 않게 한다)
+    pub overdue_since: String,
+    /// 아침 요약 알림
+    pub brief_enabled: bool,
+    pub brief_time: String,
+    pub brief_last: String,
+    /// 빠른 입력 전역 단축키(Ctrl+Alt+N). 바꾸면 다음 실행부터 적용
+    pub quick_hotkey: bool,
 }
 
 pub const THEME_IDS: [&str; 30] = [
@@ -192,6 +202,12 @@ impl Default for Settings {
             panel_size: 0.0,
             update_source: String::new(),
             update_auto: true,
+            hidden_cals: Vec::new(),
+            overdue_since: String::new(),
+            brief_enabled: true,
+            brief_time: "08:30".into(),
+            brief_last: String::new(),
+            quick_hotkey: true,
         }
     }
 }

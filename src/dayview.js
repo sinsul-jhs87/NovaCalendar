@@ -229,7 +229,7 @@ export function createDayView(root, opts = {}) {
           return;
         }
         editing = null;
-        events = await api.listEvents();
+        events = (await api.listEvents()).filter(opts.filter || (() => true));
         render();
       },
       onDelete: async (ev) => {
@@ -241,7 +241,7 @@ export function createDayView(root, opts = {}) {
         }
         opts.onSaved?.(ev);
         editing = null;
-        events = await api.listEvents();
+        events = (await api.listEvents()).filter(opts.filter || (() => true));
         render();
       },
       onCancel: leaveEditor,
@@ -267,7 +267,7 @@ export function createDayView(root, opts = {}) {
   // 입력 중에는 폼이 날아가지 않도록 목록 보기일 때만 다시 그린다.
   unlisten.push(onEventsChanged(async () => {
     done = new Set(await api.listDone().catch(() => [...done]));
-    events = await api.listEvents();
+    events = (await api.listEvents()).filter(opts.filter || (() => true));
     if (!editing) render();
   }));
   unlisten.push(onAccountsChanged(async () => {
@@ -281,7 +281,7 @@ export function createDayView(root, opts = {}) {
 
   render();
   api.listDone().then((list) => { done = new Set(list); if (!editing) render(); }).catch(() => {});
-  if (!opts.events) api.listEvents().then((list) => { events = list; if (!editing) render(); }).catch(() => {});
+  if (!opts.events) api.listEvents().then((list) => { events = list.filter(opts.filter || (() => true)); if (!editing) render(); }).catch(() => {});
   if (!opts.accounts) api.listAccounts().then((list) => { accounts = list; if (!editing) render(); }).catch(() => {});
   if (!opts.settings) api.getSettings().then((s) => { settings = { ...settings, ...s }; if (!editing) render(); }).catch(() => {});
 

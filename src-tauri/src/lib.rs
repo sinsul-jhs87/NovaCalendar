@@ -8,6 +8,7 @@ mod recur;
 mod secret;
 mod toast;
 mod update;
+mod hotkey;
 
 use std::time::Duration;
 use store::{Account, AccountInfo, Event, Settings, Store};
@@ -102,6 +103,43 @@ async fn check_update(app: AppHandle, source: Option<String>) -> Result<update::
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
     update::install(&app).await
+}
+
+/// 아침 요약 알림(화면에서 오늘 일정·밀린 일을 세어 보낸다)
+#[tauri::command]
+fn notify_brief(app: AppHandle, title: String, body: String) {
+    reminder::notify(&app, &title, &body);
+}
+
+/// 빠른 입력 단축키 등록 여부
+#[tauri::command]
+fn hotkey_status() -> bool {
+    hotkey::registered()
+}
+
+/// 보고용 내보내기: 문서\NovaCalendar\내보내기 에 저장하고 탐색기에서 보여 준다.
+#[tauri::command]
+fn export_file(app: AppHandle, name: String, content: String) -> Result<String, String> {
+    let safe: String = name.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) { '_' } else { c }).collect();
+    if safe.trim().is_empty() || safe.len() > 120 {
+        return Err("파일 이름이 올바르지 않습니다.".into());
+    }
+    let dir = backup::dir(&app)?.join("내보내기");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("폴더를 만들 수 없습니다: {e}"))?;
+    let path = dir.join(&safe);
+    // 엑셀에서 한글이 깨지지 않게 CSV는 BOM 을 붙인다
+    let mut bytes = Vec::new();
+    if safe.to_lowercase().ends_with(".csv") {
+        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    }
+    bytes.extend_from_slice(content.as_bytes());
+    std::fs::write(&path, bytes).map_err(|e| format!("저장할 수 없습니다(파일이 열려 있으면 닫아 주세요): {e}"))?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.display())).spawn();
+    }
+    Ok(path.display().to_string())
 }
 
 #[tauri::command]
@@ -271,7 +309,7 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 /// 위젯을 보이게 한다. peek=true면 다른 창에 가려져 있어도 5초간 맨 앞으로 가져온다.
-fn show_widget(app: &AppHandle, peek: bool) {
+pub(crate) fn show_widget(app: &AppHandle, peek: bool) {
     let Some(w) = app.get_webview_window("main") else { return };
     pin::set_visible(true);
     let _ = w.show();
@@ -639,6 +677,9 @@ pub fn run() {
             pin::install(app.handle());
             reminder::spawn(app.handle().clone());
             update::spawn(app.handle().clone());
+            if app.state::<Store>().settings().quick_hotkey {
+                hotkey::install(app.handle().clone());
+            }
             sync::spawn_auto(app.handle().clone());
             Ok(())
         })
@@ -650,6 +691,9 @@ pub fn run() {
             set_done,
             set_done_many,
             check_update,
+            notify_brief,
+            hotkey_status,
+            export_file,
             install_update,
             delete_event,
             get_settings,

@@ -123,6 +123,9 @@ export const api = {
   // 백업
   backupNow: () => invoke('backup_now'),
   backupInfo: () => invoke('backup_info'),
+  notifyBrief: (title, body) => invoke('notify_brief', { title, body }),
+  hotkeyStatus: () => invoke('hotkey_status'),
+  exportFile: (name, content) => invoke('export_file', { name, content }),
   checkUpdate: (source = null) => invoke('check_update', { source }),
   installUpdate: () => invoke('install_update'),
   restoreBackup: (withSettings = false) => invoke('restore_backup', { withSettings }),
@@ -134,6 +137,7 @@ export const onEventsChanged = (fn) => listen('events-changed', fn);
 export const onSettingsChanged = (fn) => listen('settings-changed', fn);
 export const onAccountsChanged = (fn) => listen('accounts-changed', fn);
 export const onUpdateAvailable = (fn) => listen('update-available', fn);
+export const onQuickAdd = (fn) => listen('quick-add', fn);
 // 설정 창에서 아직 저장하지 않은 값을 위젯에 미리 보여 줄 때 쓴다(저장되지 않음).
 export const onSettingsPreview = (fn) => listen('settings-preview', fn);
 export const sendSettingsPreview = (patch) => emit('settings-preview', patch);
@@ -312,5 +316,6 @@ export function groupZoom(s, key) {
   return Math.min(1.6, Math.max(0.8, Number(s?.fontScale) || 1));
 }
 
-/** 기본 업데이트 위치(설정에서 비워 두면 이 위치를 쓴다) */
+/** 기본 업데이트 위치(설정에서 비워 두면 GitHub → 공유 폴더 순서로 확인) */
+export const UPDATE_GITHUB = 'https://github.com/sinsul-jhs87/NovaCalendar/releases/latest/download';
 export const UPDATE_DEFAULT = '\\\\DESKTOP-2KBH0F7\\NovaCalendarUpdateServer';

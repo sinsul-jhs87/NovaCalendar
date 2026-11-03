@@ -1,7 +1,8 @@
 import './scrollfx.js';
+import { parseQuick } from './quickadd.js';
 import {
   api, THEMES, applyTheme, applyLook, expandRecurring, repeatLabel, fromKey, onEventsChanged, onSettingsChanged, onAccountsChanged, onSettingsPreview,
-  updateSettings, toKey, addDays, eventsOn, isAllDayLike, timeLabel, hmToMin, minToHm, DOW, el, pad, doneKey, DONE_STYLES, panelFlags, groupZoom, onUpdateAvailable } from './common.js';
+  updateSettings, toKey, addDays, eventsOn, isAllDayLike, timeLabel, hmToMin, minToHm, DOW, el, pad, doneKey, DONE_STYLES, panelFlags, groupZoom, onUpdateAvailable, onQuickAdd, COLORS } from './common.js';
 import { createDayView } from './dayview.js';
 import { dayItems, solarToLunar, lunarText, lunarLong, setCustomHolidays } from './koreancal.js';
 
@@ -451,11 +452,12 @@ function renderDow() {
 /** 반복 일정을 화면에 필요한 구간의 날짜로 펼친다(기준 날짜 ±50일과 오늘부터 30일). */
 function refreshView() {
   const keys = [toKey(addDays(anchor, -50)), toKey(addDays(anchor, 50)), toKey(addDays(new Date(), -1)), toKey(addDays(new Date(), 30))].sort();
-  viewEvents = expandRecurring(events, keys[0], keys[3]);
+  viewEvents = expandRecurring(events.filter(isVisible), keys[0], keys[3]); // 숨긴 캘린더는 뺀다
 }
 
 function render() {
   refreshView();
+  renderStatus();
   const view = settings.view;
   grid.className = `grid ${view === 'month' ? 'month' : 'tl'}`;
   grid.replaceChildren();
@@ -690,7 +692,8 @@ function openDayOverlay(key, anchor, edit = null, focus = null) {
     date: key,
     edit,
     focus, // 패널에서 누른 일정: 팝업 목록에서 찾아 보이게 하고 잠깐 강조
-    events,
+    events: events.filter(isVisible),
+    filter: isVisible,
     accounts,
     settings,
     onClose: () => closeDayOverlay(),
@@ -996,6 +999,7 @@ $('#mi-quit').addEventListener('click', () => api.quitApp());
 
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (closeTools()) return;
   if (!modal.hidden) closeModal();
   else if (!menu.hidden) setMenu(false);
   else if (moveMode) setMove(false);
@@ -1183,3 +1187,272 @@ document.addEventListener('keydown', (e) => {
     openSearch();
   }
 });
+
+
+// ───────────────────── 캘린더 보이기·숨기기(아래 막대) ─────────────────────
+function hiddenSet() { return new Set(settings.hiddenCals || []); }
+function isVisible(ev) { return !hiddenSet().has(ev.calendarId || 'local'); }
+function calNameOf(id) { return !id || id === 'local' ? '내 캘린더' : accounts.find((a) => a.id === id)?.name || ''; }
+function calList() {
+  return [{ id: 'local', name: '내 캘린더', color: COLORS[0] }, ...accounts.map((a) => ({ id: a.id, name: a.name, color: a.color || '#94a3b8' }))];
+}
+function renderStatus() {
+  const box = $('#calchips');
+  const hid = hiddenSet();
+  const cals = calList();
+  box.hidden = cals.length < 2; // 캘린더가 하나뿐이면 숨길 필요가 없다
+  box.replaceChildren(...cals.map((c) => {
+    const off = hid.has(c.id);
+    const b = el('button', 'calchip' + (off ? ' off' : ''));
+    b.type = 'button';
+    b.style.setProperty('--c', c.color);
+    b.title = `${c.name} — 눌러서 ${off ? '보이기' : '숨기기'}`;
+    b.setAttribute('aria-pressed', String(!off));
+    b.append(el('i', 'dot'), el('span', null, c.name));
+    b.addEventListener('click', () => toggleCal(c.id));
+    return b;
+  }));
+  // 밀린 일: 처음 쓰는 날부터 센다
+  if (!settings.overdueSince) {
+    settings.overdueSince = toKey(new Date());
+    updateSettings({ overdueSince: settings.overdueSince });
+  }
+  const n = overdueList().length;
+  const pill = $('#od-pill');
+  pill.hidden = n === 0;
+  pill.textContent = `밀린 일 ${n}`;
+  $('#mi-overdue-state').textContent = n ? `${n}건` : '없음';
+  if (!$('#odov').hidden) renderOverdue();
+  if (!$('#exov').hidden) renderExport();
+}
+function toggleCal(id) {
+  const s = hiddenSet();
+  s.has(id) ? s.delete(id) : s.add(id);
+  settings.hiddenCals = [...s];
+  render();
+  updateSettings({ hiddenCals: settings.hiddenCals });
+}
+
+// ───────────────────── 도구 창 공통(빠른 입력·밀린 일·내보내기) ─────────────────────
+const TOOL_OVS = ['#qaov', '#odov', '#exov'];
+function openTool(sel) {
+  setMenu(false);
+  setYm(false);
+  if (dayOv) closeDayOverlay(true);
+  closeSearch();
+  closeTools();
+  const ov = $(sel);
+  ov.hidden = false;
+  ov.classList.add('in');
+}
+/** 열려 있는 도구 창을 닫는다. 닫은 게 있으면 true */
+function closeTools() {
+  let closed = false;
+  for (const sel of TOOL_OVS) {
+    const ov = $(sel);
+    if (!ov.hidden) { ov.hidden = true; ov.classList.remove('in'); closed = true; }
+  }
+  return closed;
+}
+for (const sel of TOOL_OVS) $(sel).addEventListener('click', (e) => { if (e.target === e.currentTarget) closeTools(); });
+$('#qa-close').addEventListener('click', closeTools);
+$('#od-close').addEventListener('click', closeTools);
+$('#ex-close').addEventListener('click', closeTools);
+
+// ───────────────────── 밀린 일 ─────────────────────
+function overdueList() {
+  const since = settings.overdueSince;
+  if (!since) return [];
+  const limit = toKey(addDays(new Date(), -60)); // 너무 오래된 것은 보지 않는다(최근 60일)
+  const from = since > limit ? since : limit;
+  const today = toKey(new Date());
+  const yesterday = toKey(addDays(new Date(), -1));
+  if (from > yesterday) return [];
+  return expandRecurring(events.filter((e) => isVisible(e) && !e.deleted), from, yesterday)
+    .filter((e) => e.endDate < today && e.endDate >= from && !isDone(e))
+    .sort((a, b) => `${b.startDate} ${b.startTime || ''}`.localeCompare(`${a.startDate} ${a.startTime || ''}`));
+}
+function renderOverdue() {
+  const list = overdueList();
+  const box = $('#od-list');
+  $('#od-count').textContent = list.length ? `${list.length}건` : '';
+  box.replaceChildren();
+  if (!list.length) {
+    box.append(el('div', 'dv-empty', '밀린 일이 없습니다. 지난 일정을 날짜 팝업에서 완료로 체크하면 여기서 빠집니다.'));
+    return;
+  }
+  let last = '';
+  for (const ev of list) {
+    if (ev.startDate !== last) { box.append(el('div', 'pgroup', dayLabel(ev.startDate))); last = ev.startDate; }
+    const row = el('div', 'od-item');
+    row.style.setProperty('--c', ev.color || COLORS[0]);
+    const info = el('div', 'od-info');
+    info.append(el('div', 'ttl', ev.title), el('div', 'meta', [timeLabel(ev), calNameOf(ev.calendarId)].filter(Boolean).join(' · ')));
+    const acts = el('div', 'od-acts');
+    const btn = (label, fn) => {
+      const b = el('button', 'btn sm', label);
+      b.type = 'button';
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        b.disabled = true;
+        try { await fn(); } catch (err) { b.disabled = false; alert(String(err)); }
+      });
+      return b;
+    };
+    acts.append(btn('완료', () => api.setDone(doneKey(ev), true)));
+    const base = events.find((x) => x.id === (ev._base || ev).id);
+    // 기간을 그대로 둔 채 오늘·내일로 옮긴다(끌어서 옮기기와 같은 moveEvent 사용)
+    const daysTo = (k) => Math.round((fromKey(k) - fromKey(base.startDate)) / 86400000);
+    if (base && !base.readOnly && !base.repeat) {
+      acts.append(btn('오늘로', () => moveEvent(base.id, daysTo(toKey(new Date())))), btn('내일로', () => moveEvent(base.id, daysTo(toKey(addDays(new Date(), 1))))));
+    } else {
+      acts.append(el('span', 'od-note', base?.repeat ? '반복 일정' : '읽기 전용'));
+    }
+    row.append(info, acts);
+    box.append(row);
+  }
+}
+$('#od-pill').addEventListener('click', () => { openTool('#odov'); renderOverdue(); });
+$('#mi-overdue').addEventListener('click', () => { openTool('#odov'); renderOverdue(); });
+
+// ───────────────────── 보고용 내보내기 ─────────────────────
+let exPeriod = 'thisweek';
+const WD = '일월화수목금토';
+function exRange(p) {
+  const t = new Date();
+  const d0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const mon = addDays(d0, -((d0.getDay() + 6) % 7));
+  if (p === 'thisweek') return [mon, addDays(mon, 6)];
+  if (p === 'lastweek') return [addDays(mon, -7), addDays(mon, -1)];
+  if (p === 'thismonth') return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)];
+  if (p === 'lastmonth') return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)];
+  const a = $('#ex-from').value || toKey(d0), b = $('#ex-to').value || a;
+  return a <= b ? [fromKey(a), fromKey(b)] : [fromKey(b), fromKey(a)];
+}
+function exTable() {
+  const [a, b] = exRange(exPeriod);
+  const from = toKey(a), to = toKey(b);
+  const src = events.filter((e) => !e.deleted && ($('#ex-visible').checked ? isVisible(e) : true));
+  const rows = expandRecurring(src, from, to)
+    .filter((e) => e.startDate <= to && e.endDate >= from)
+    .sort((x, y) => `${x.startDate} ${x.allDay ? '' : x.startTime || ''}`.localeCompare(`${y.startDate} ${y.allDay ? '' : y.startTime || ''}`));
+  const data = rows.map((e) => ({
+    날짜: e.startDate === e.endDate ? e.startDate : `${e.startDate}~${e.endDate}`,
+    요일: WD[fromKey(e.startDate).getDay()],
+    시간: e.allDay || !e.startTime ? '종일' : `${e.startTime}~${e.endTime || ''}`,
+    제목: e.title,
+    캘린더: calNameOf(e.calendarId),
+    완료: isDone(e) ? '완료' : '',
+    메모: (e.memo || '').replace(/\s+/g, ' ').trim(),
+  }));
+  return { from, to, data };
+}
+function exText({ from, to, data }) {
+  const lines = [`■ 일정 보고 (${from} ~ ${to}) · 총 ${data.length}건, 완료 ${data.filter((r) => r.완료).length}건`];
+  let last = '';
+  for (const r of data) {
+    const day = r.날짜.slice(0, 10);
+    if (day !== last) { lines.push('', `[${day.slice(5).replace('-', '/')} ${r.요일}]`); last = day; }
+    lines.push(`${r.완료 ? '☑' : '☐'} ${r.시간 === '종일' ? '' : r.시간 + ' '}${r.제목}${r.날짜.length > 10 ? ` (~${r.날짜.slice(16).replace('-', '/')})` : ''}${r.캘린더 && r.캘린더 !== '내 캘린더' ? ` [${r.캘린더}]` : ''}${r.메모 ? ` - ${r.메모}` : ''}`);
+  }
+  return lines.join('\n');
+}
+const csvCell = (v) => { const t = String(v ?? ''); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+function renderExport(msg = '') {
+  if (exPeriod !== 'custom') { const [a, b] = exRange(exPeriod); $('#ex-from').value = toKey(a); $('#ex-to').value = toKey(b); }
+  $('#ex-from').disabled = $('#ex-to').disabled = exPeriod !== 'custom';
+  document.querySelectorAll('#ex-period button').forEach((b) => b.classList.toggle('on', b.dataset.p === exPeriod));
+  const t = exTable();
+  $('#ex-summary').textContent = msg || `${t.from} ~ ${t.to} · 일정 ${t.data.length}건 (완료 ${t.data.filter((r) => r.완료).length}건)`;
+  const text = exText(t).split('\n');
+  $('#ex-preview').textContent = text.slice(0, 16).join('\n') + (text.length > 16 ? '\n…' : '');
+}
+document.querySelectorAll('#ex-period button').forEach((b) => b.addEventListener('click', () => { exPeriod = b.dataset.p; renderExport(); }));
+['#ex-from', '#ex-to', '#ex-visible'].forEach((sel) => $(sel).addEventListener('change', () => renderExport()));
+$('#ex-save').addEventListener('click', async () => {
+  const t = exTable();
+  const head = ['날짜', '요일', '시간', '제목', '캘린더', '완료', '메모'];
+  const csv = [head.join(','), ...t.data.map((r) => head.map((k) => csvCell(r[k])).join(','))].join('\r\n');
+  try {
+    const path = await api.exportFile(`일정보고_${t.from}_${t.to}.csv`, csv);
+    renderExport(`저장했습니다: ${path}`);
+  } catch (err) {
+    renderExport(`저장하지 못했습니다: ${err}`);
+  }
+});
+$('#ex-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(exText(exTable()));
+    renderExport('텍스트를 복사했습니다. 메일·메신저·보고서에 붙여 넣으세요.');
+  } catch (err) {
+    renderExport(`복사하지 못했습니다: ${err}`);
+  }
+});
+$('#mi-export').addEventListener('click', () => { openTool('#exov'); renderExport(); });
+
+// ───────────────────── 아침 요약 알림 ─────────────────────
+async function maybeBrief() {
+  if (settings.briefEnabled === false || !events) return;
+  const now = new Date();
+  const today = toKey(now);
+  if (settings.briefLast === today) return;
+  const [hh, mm] = String(settings.briefTime || '08:30').split(':').map(Number);
+  if (now.getHours() * 60 + now.getMinutes() < (hh || 0) * 60 + (mm || 0)) return;
+  settings.briefLast = today;
+  updateSettings({ briefLast: today });
+  const todays = eventsOn(expandRecurring(events.filter((e) => isVisible(e) && !e.deleted), today, today), today).filter((e) => !isDone(e));
+  const od = overdueList().length;
+  const lines = todays.slice(0, 3).map((e) => `${e.allDay || !e.startTime ? '종일' : e.startTime} ${e.title}`);
+  if (todays.length > 3) lines.push(`외 ${todays.length - 3}건`);
+  try {
+    await api.notifyBrief(`오늘 일정 ${todays.length}건${od ? ` · 밀린 일 ${od}건` : ''}`, lines.join('\n') || '오늘은 일정이 없어요.');
+  } catch (err) {
+    console.error(err);
+  }
+}
+setTimeout(maybeBrief, 8000);
+setInterval(maybeBrief, 60000);
+
+// ───────────────────── 빠른 입력 ─────────────────────
+let qaParsed = null;
+function openQuick() {
+  openTool('#qaov');
+  $('#qa-input').value = '';
+  qaUpdate();
+  setTimeout(() => $('#qa-input').focus(), 30);
+}
+function qaUpdate() {
+  const v = $('#qa-input').value.trim();
+  const pv = $('#qa-preview');
+  pv.classList.remove('err');
+  qaParsed = null;
+  $('#qa-save').disabled = true;
+  if (!v) { pv.textContent = '날짜·시간을 같이 쓰면 알아서 넣습니다. 시간이 없으면 종일 일정이 됩니다.'; return; }
+  const r = parseQuick(v);
+  if (r.error) { pv.textContent = r.error; pv.classList.add('err'); return; }
+  qaParsed = r;
+  pv.textContent = `→ ${r.label}  ·  내 캘린더${r.allDay ? '' : ' · 10분 전 알림'}`;
+  $('#qa-save').disabled = false;
+}
+async function qaSave() {
+  if (!qaParsed) return;
+  const r = qaParsed;
+  $('#qa-save').disabled = true;
+  try {
+    await api.saveEvent({ id: crypto.randomUUID(), calendarId: 'local', title: r.title, startDate: r.startDate, endDate: r.endDate, allDay: r.allDay, startTime: r.allDay ? null : r.startTime, endTime: r.allDay ? null : r.endTime, color: COLORS[0], reminders: r.allDay ? [] : [10], memo: '' });
+    closeTools();
+    anchor = fromKey(r.startDate); // 저장한 날짜가 보이게
+    render();
+  } catch (err) {
+    $('#qa-preview').textContent = `저장하지 못했습니다: ${err}`;
+    $('#qa-preview').classList.add('err');
+    $('#qa-save').disabled = false;
+  }
+}
+$('#qa-input').addEventListener('input', qaUpdate);
+$('#qa-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); qaSave(); } });
+$('#qa-save').addEventListener('click', qaSave);
+$('#mi-quick').addEventListener('click', openQuick);
+onQuickAdd(() => openQuick());
+// 위젯 안에서는 Ctrl+N 으로도
+window.addEventListener('keydown', (e) => { if (e.ctrlKey && !e.altKey && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); openQuick(); } });

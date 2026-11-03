@@ -1,6 +1,6 @@
 //! 사내 배포용 자동 업데이트.
 //!
-//! 관리자가 공유 폴더(\\server\share\NovaCalendar) 또는 웹 주소(https://…/NovaCalendar)에
+//! 기본: GitHub Releases(최신 릴리즈의 첨부 파일) → 안 되면 사내 공유 폴더. 관리자가 그 위치에
 //! 새 설치 파일과 latest.json 을 올려 두면, 각 PC가 켤 때와 6시간마다 확인한다.
 //!
 //! latest.json: { "version": "1.12.0", "file": "NovaCalendar-Setup-1.12.0.exe", "sha256": "…", "notes": "…" }
@@ -29,15 +29,30 @@ pub struct CheckResult {
     pub current: String,
     pub latest: Option<Manifest>,
     pub newer: bool,
+    /// latest.json 을 읽은 위치
+    pub from: String,
 }
 
-/// 기본 업데이트 위치(설정에서 비워 두면 이 위치를 쓴다)
+/// 기본 업데이트 위치(설정에서 비워 두면 이 순서로 확인한다): GitHub Releases → 사내 공유 폴더
+pub const GITHUB_SOURCE: &str = "https://github.com/sinsul-jhs87/NovaCalendar/releases/latest/download";
 pub const DEFAULT_SOURCE: &str = r"\\DESKTOP-2KBH0F7\NovaCalendarUpdateServer";
 
-/// 실제로 확인할 위치: 비어 있으면 기본 위치
-pub fn effective_source(s: &str) -> String {
+/// 실제로 확인할 위치들: 설정에 직접 넣은 위치가 있으면 그것만, 비어 있으면 기본 위치들을 차례로
+pub fn sources(s: &str) -> Vec<String> {
     let t = s.trim();
-    if t.is_empty() { DEFAULT_SOURCE.to_string() } else { t.to_string() }
+    if t.is_empty() { vec![GITHUB_SOURCE.to_string(), DEFAULT_SOURCE.to_string()] } else { vec![t.to_string()] }
+}
+
+/// 위치들을 차례로 확인해 처음 읽히는 latest.json 과 그 위치를 돌려준다(모두 실패하면 마지막 오류).
+async fn first_manifest(list: &[String]) -> Result<(Manifest, String), String> {
+    let mut errs = Vec::new();
+    for src in list {
+        match read_manifest(src).await {
+            Ok(m) => return Ok((m, src.clone())),
+            Err(e) => errs.push(format!("{src}: {e}")),
+        }
+    }
+    Err(errs.join(" / "))
 }
 
 /// 이미 알린 버전(같은 버전을 6시간마다 다시 알리지 않는다)
@@ -104,16 +119,15 @@ pub async fn read_manifest(source: &str) -> Result<Manifest, String> {
 
 pub async fn check(app: &AppHandle, source: Option<String>) -> Result<CheckResult, String> {
     let current = app.package_info().version.to_string();
-    let src = effective_source(&source.unwrap_or_else(|| app.state::<Store>().settings().update_source));
-    let m = read_manifest(&src).await?;
+    let list = sources(&source.unwrap_or_else(|| app.state::<Store>().settings().update_source));
+    let (m, from) = first_manifest(&list).await?;
     let newer = newer_than(&m.version, &current);
-    Ok(CheckResult { current, latest: Some(m), newer })
+    Ok(CheckResult { current, latest: Some(m), newer, from })
 }
 
 /// 받아서 확인한 뒤 설치를 시작하고 앱을 끝낸다.
 pub async fn install(app: &AppHandle) -> Result<(), String> {
-    let src = effective_source(&app.state::<Store>().settings().update_source);
-    let m = read_manifest(&src).await?;
+    let (m, src) = first_manifest(&sources(&app.state::<Store>().settings().update_source)).await?;
     let current = app.package_info().version.to_string();
     if !newer_than(&m.version, &current) {
         return Err(format!("이미 최신 버전입니다 ({current})."));
@@ -202,7 +216,9 @@ mod tests {
         assert!(!newer_than("1.9.0", "1.11.0"));
         assert_eq!(join("\\\\srv\\share\\Nova\\", "latest.json"), "\\\\srv\\share\\Nova\\latest.json");
         assert_eq!(join("https://x.co/nova/", "latest.json"), "https://x.co/nova/latest.json");
-        assert_eq!(effective_source("  "), DEFAULT_SOURCE);
+        assert_eq!(sources("  "), vec![GITHUB_SOURCE.to_string(), DEFAULT_SOURCE.to_string()]);
+        assert_eq!(sources(r"\\pc\share"), vec![r"\\pc\share".to_string()]);
+        assert_eq!(join(GITHUB_SOURCE, "latest.json"), "https://github.com/sinsul-jhs87/NovaCalendar/releases/latest/download/latest.json");
         assert_eq!(join(DEFAULT_SOURCE, "latest.json"), r"\\DESKTOP-2KBH0F7\NovaCalendarUpdateServer\latest.json");
     }
 }

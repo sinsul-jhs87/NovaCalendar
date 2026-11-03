@@ -102,6 +102,18 @@
     </section>
 
     <section class="card">
+      <h2>편의 기능</h2>
+      <label class="radio"><input type="checkbox" id="brief-enabled">
+        <span>아침 요약 알림<small>정한 시각(그 뒤에 켜면 켤 때)에 하루 한 번 '오늘 일정 N건 · 밀린 일 N건'과 첫 일정 몇 개를 알려 줍니다</small></span></label>
+      <label class="field"><span>알림 시각</span><input type="time" id="brief-time"></label>
+      <label class="radio"><input type="checkbox" id="quick-hotkey">
+        <span>빠른 입력 단축키 Ctrl+Alt+N<small>어느 프로그램을 쓰든 위젯을 띄우고 빠른 입력 창을 엽니다. 바꾸면 다음에 켤 때부터 적용됩니다. <b id="hotkey-state"></b></small></span></label>
+      <div class="kv"><span>밀린 일</span><span id="od-since"></span></div>
+      <div class="inline"><button class="btn" id="btn-od-reset">오늘부터 다시 세기</button></div>
+      <p class="hint small">밀린 일은 완료 체크하지 않은 지난 일정입니다(최근 60일, 숨긴 캘린더 제외). 위젯 아래쪽 '밀린 일' 단추나 메뉴에서 보고 완료·오늘로·내일로 옮길 수 있습니다.</p>
+    </section>
+
+    <section class="card">
       <h2>캘린더 동기화</h2>
       <p class="hint">연결한 캘린더의 일정이 위젯에 함께 표시됩니다. Google·네이버(CalDAV)는 양방향, ICS 구독은 읽기 전용입니다.</p>
       <div id="accounts"></div>

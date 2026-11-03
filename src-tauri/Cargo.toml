@@ -1,6 +1,6 @@
 [package]
 name = "widget-calendar"
-version = "1.12.2"
+version = "1.13.0"
 description = "NovaCalendar - Windows 11 desktop widget calendar"
 edition = "2021"
 
